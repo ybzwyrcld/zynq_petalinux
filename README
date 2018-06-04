@@ -1,0 +1,107 @@
+1. 安装petalinux
+A. 在xilinx官网下载petalinux相关文件:
+    安装包：petalinux-v2017.4-final-installer.run;
+    源码包：petalinux-v2017.4-open_components.tar;
+    板级支持包：avnet-digilent-zedboard-v2017.4-final.bsp;
+    安装用户手册：UG1144;
+    
+B. 安装依赖库
+    $ sudo apt-get install build-essential vim tofrodos iproute2 gawk gcc git make net-tools libncurses5-dev tftpd zlib1g-dev libssl-dev flex bison libselinux1
+    额外库:
+    $ sudo apt-get install lib32z1 lib32ncurses5 libbz2-1.0:i386 lib32stdc++6 libssl-dev
+    编译时如果出现错误<CROSS_COMPILE>-gcc: Command not found, 需要安装下面三个库:
+    $ sudo apt-get install libc6:i386 libstdc++6:i386 zlib1g:i386
+
+C. 安装tftp服务
+    $ sudo apt-get install tftpd tftp openbsd-inetd
+    $ gedit /etc/inetd.conf
+    在文件中增加以下内容:
+        tftp dgram udp wait nobody /usr/sbin/tcpd /usr/sbin/in.tftpd /tftproot
+    然后保存并退出
+    $ mkdir /tftproot
+    $ chmod 777 /tftproot
+    $ /etc/init.d/openbsd-inetd restart
+    $ netstat -an | more | grep udp
+    看到有如下输出, 即表示tftp安装成功
+        udp        0      0 0.0.0.0:69              0.0.0.0:*
+
+D. 修改默认bash
+    Ubuntu默认的/bin/sh是dash的, 输入命令
+    $ sudo dpkg-reconfigure dash
+    在弹出界面选“否”来禁用dash, 选择bash. 输入命令
+    $ ls -al /bin/sh
+    会看到打印信息
+        lrwxrwxrwx 1 root root 9 Dec 8 14:59 /bin/sh -> /bin/bash
+
+E. 安装petalinux
+    $ mkdir -p /opt/pkg/petalinux
+    $ ./petalinux-v2017.4-final-installer.run /opt/pkg/petalinux
+    注意: 不要使用root用户安装petalinux; 安装过程中总共只有3个y, 要小心, 每当选择一个y, 小心按q, 表示关闭查看license文件, 此处不要按Enter键终止安装!
+
+F. 配置和验证
+    使用前进行配置:
+    $ source /opt/pkg/petalinux/petalinux-v2017.4-final/settings.sh
+    配置完成后输入
+    $ echo $PETALINUX
+    会看到打印信息:
+    /opt/pkg/petalinux/petalinux-v2017.4-final
+    Xilinx默认获取统计信息，使用如下指令关闭统计信息:
+    $ petalinux-util - webtalk off
+
+
+2 使用petalinux
+A. 创建petalinux工程
+    第一种创建方法: 根据板级支持包创建新工程
+    $ petalinux-create -t project -s avnet-digilent-zedboard-v2017.4-final.bsp -n test_project1 
+    在当前目录下创建名为”test_project1”的工程: -t表示的是type,类型是project; -s表示source,源是你的BSP文件, -n 表示name, 后面为自定义工程名称.
+
+    第二种创建方法: 直接创建新工程
+    $ petalinux-create -t project --template zynq --name test_project2
+    在当前目录下创建名为”test_project2”的工程: template属性可以选择zynqMP, zynq 和microblaze; 接着进入test_project2工程目录下, 导入HDF文件:
+    $ petalinux-config --get-hw-description={hdf file path}
+
+B. 配置工程
+    $ petalinux-config
+
+C. 编译工程
+    $ petalinux-build
+
+D. 插入驱动模块
+    $ petalinux-create -t modules --name {driver name} --enable
+    $ cd project-spec/meta-user/recipes-modules/{driver name}
+    修改{driver name}.bb文件, 继续进入文件夹
+    $ cd files
+    修改{driver name}.c; 修改完成后编译驱动模块
+    $ peatlinux-build -c {driver name}
+    进入开发板上驱动模块路径:
+    $ cd /lib/modules/4.9.0-xilinx-v2017.4/extra
+    插入驱动模块命令: 
+    $ modprobe {driver name}.ko
+
+E. 生成启动文件
+    编译完成, 在images/linux/路径下有以下文件
+        一级引导程序: fsbl.elf
+        镜像引导程序: u-boot.elf
+        PL配置程序.bit
+        镜像程序(内核,设备树,文件系统): image.ub
+    打包BOOT.BIN
+    $ petalinux-package --boot --fsbl zynq_fsbl.elf --fpga system_wrapper.bit --u-boot u-boot.elf
+    将会生成BOOT.BIN; 将BOOT.BIN和image.ub拷贝到SD卡, 上电启动.
+
+F. petalinux常用命令
+    配置某个模块{u-boot, kernel}
+    $ petalinux-config -c {module name}
+
+    编译某个模块{u-boot, kernel, device-tree}
+    $ petalinux-build -c {module name}
+
+    清除某个模块{u-boot, kernel, device-tree}
+    $ petalinux-build -c {module name} -x clean
+
+    清除整个{project name}/build目录
+    $ petalinux-build -x distclean
+
+
+3. 测试环境
+    操作系统：Ubuntu 16.04 64bit
+    交叉编译环境：arm-linux-gnueabihf-  version 6.2.1 (petalinux v2017.4自带)
